@@ -1,10 +1,20 @@
-# In your project root
-ni .gitignore -Value @"
+ni .gitignore -Force -Value @"
 # Python
+venv/
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 mood.db
+
+# Big artifacts / zips / models
+*.zip
+model/
+*.pt
+*.onnx
+*.bin
+*.ckpt
 
 # Node / Expo / React Native
 node_modules/
@@ -17,21 +27,6 @@ ios/
 android/
 .next/
 
-# Models / datasets / checkpoints
-model/*.pt
-*.onnx
-*.bin
-*.ckpt
-
 # OS
 .DS_Store
 "@
-
-model.zip
-.venv.zip
-model/
-
-# Stop tracking anything already committed
-git rm -r --cached .venv node_modules ios android model/*.pt mood.db .expo dist build .next
-git add .
-git commit -m "Prune large/unwanted files; add .gitignore"
