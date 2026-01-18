@@ -3,13 +3,13 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import re
 import requests
-import torch
-import torch.nn.functional as F
 from collections import defaultdict, deque
 import sqlite3, datetime as dt
 from pathlib import Path
+import os
+from hf_client import hf_emotion_predict
 
-from model.model_loader import load_emotion_model
+
 from mood_routes import mood_bp
 
 # ---------------------------
@@ -47,14 +47,14 @@ def init_db():
 # ---------------------------
 # App & config
 # ---------------------------
-torch.set_num_threads(1)
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 init_db()
 app.register_blueprint(mood_bp)
 
 # Emotion classifier
-emo_model, emo_tok, emo_device = load_emotion_model()
+
 EMOTION_LABELS = ["anger", "fear", "joy", "love", "sadness", "surprise"]
 MAX_LEN_EMO = 256
 
@@ -69,16 +69,21 @@ HISTORIES: dict[str, deque[tuple[str, str]]] = defaultdict(lambda: deque(maxlen=
 # Helpers: emotion / reply
 # ---------------------------
 def detect_emotion(text: str) -> tuple[str, float]:
-    """Return (label, confidence); low confidence falls back to 'neutral'."""
-    enc = emo_tok(text, return_tensors="pt", truncation=True, padding=True, max_length=MAX_LEN_EMO)
-    enc = {k: v.to(emo_device) for k, v in enc.items()}
-    with torch.no_grad():
-        logits = emo_model(**enc).logits
-        probs = F.softmax(logits, dim=-1)[0]
-        idx = int(torch.argmax(probs).item())
-        conf = float(probs[idx].item())
-    label = EMOTION_LABELS[idx] if conf >= 0.5 else "neutral"
-    return label, conf
+    """
+    Uses Hugging Face Inference API.
+    Returns (label, confidence). Falls back to neutral on any error.
+    """
+    try:
+        res = hf_emotion_predict(text)
+        label = (res.get("label") or "neutral").lower()
+        conf = float(res.get("score") or 0.0)
+        if conf < 0.5:
+            return "neutral", conf
+        return label, conf
+    except Exception as e:
+        print("HF emotion error:", repr(e))
+        return "neutral", 0.0
+
 
 def system_text_minimal(emotion: str) -> str:
     return (
@@ -121,6 +126,19 @@ def clean_reply_minimal(s: str) -> str:
     parts = _SENT_SPLIT.split(s)
     return " ".join(parts[:3]).strip() or s
 
+def simple_empathetic_reply(user_text: str, emotion: str) -> str:
+    templates = {
+        "sadness": "I’m really sorry you’re feeling this way. Do you want to share what’s been weighing on you most?",
+        "anger": "That sounds really frustrating. What part of it is bothering you the most right now?",
+        "fear": "That sounds scary and stressful. What’s the main thing you’re worried might happen?",
+        "joy": "I’m happy to hear that. What do you think contributed most to this feeling?",
+        "love": "That sounds really meaningful. Want to tell me more about what made it feel special?",
+        "surprise": "That sounds unexpected. How did it make you feel in the moment?",
+        "neutral": "I’m here with you. Want to tell me a bit more about what’s going on?"
+    }
+    return templates.get(emotion, templates["neutral"])
+
+
 # ---------------------------
 # Helpers: Journals
 # ---------------------------
@@ -136,9 +154,9 @@ def _now_iso():
 def health():
     return jsonify({
         "status": "ok",
-        "gpu": torch.cuda.is_available(),
-        "ollama_model": OLLAMA_MODEL,
+        "mode": "hf-emotion + template-replies"
     })
+
 
 @app.post("/respond")
 def respond():
@@ -271,5 +289,6 @@ def journal_delete(jid: int):
 # Main
 # ---------------------------
 if __name__ == "__main__":
-    # Run locally: http://127.0.0.1:5001/health
-    app.run(debug=True, host="0.0.0.0", port=5001)
+    port = int(os.environ.get("PORT", "5000"))
+    app.run(host="0.0.0.0", port=port, debug=False)
+

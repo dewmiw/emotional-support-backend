@@ -1,32 +1,14 @@
-ni .gitignore -Force -Value @"
-# Python
 venv/
-.venv/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-mood.db
-
-# Big artifacts / zips / models
+.env
+*.pt
+*.bin
 *.zip
 model/
-*.pt
-*.onnx
-*.bin
-*.ckpt
-
-# Node / Expo / React Native
-node_modules/
-.expo/
-dist/
-build/
-.android/
-.ios/
-ios/
-android/
-.next/
-
-# OS
+*.sqlite3
+*.db
 .DS_Store
-"@
+.idea/
+.vscode/
+node_modules/
